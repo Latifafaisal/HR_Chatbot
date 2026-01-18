@@ -1,28 +1,29 @@
-import os
+import streamlit as st
 import pandas as pd
 import requests
+import os
 from dotenv import load_dotenv
 
 # Load Hugging Face token
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# Load dataset
+# Load HR dataset
 df = pd.read_csv("HR-Employee-Attrition.csv")
-columns_desc = ", ".join(df.columns)
 
-# Hugging Face API endpoint
+# Hugging Face router endpoint
 API_URL = "https://router.huggingface.co/v1/chat/completions"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
-# Function to ask Qwen
+# Ask Qwen and compute answer
 def ask_qwen(question):
+    # Tell Qwen to interpret the question in plain English
     prompt = f"""
-You are an HR data assistant with access to a dataset called df.
-Dataset columns: {columns_desc}.
+You are an HR data assistant. You have access to a dataset called df.
+Columns in the dataset: {', '.join(df.columns)}.
 
-Answer the user's question in **plain English**. Use Python/pandas to compute counts, averages, or summaries if needed.
-Return only the final answer, do not add extra explanation.
+Answer the user's question in plain English. Compute counts, averages, or summaries directly using Python/pandas if needed.
+Return only the final answer in natural language.
 
 Question: {question}
 """
@@ -36,12 +37,11 @@ Question: {question}
     except:
         return "Error: cannot get response from Qwen."
 
-# Command-line chatbot loop
-print("HR Chatbot v3 (type 'exit' to quit)")
-while True:
-    question = input("\nAsk a question: ")
-    if question.lower() in ["exit", "quit"]:
-        print("Goodbye!")
-        break
+# Streamlit UI
+st.title("HR Dataset Chatbot (Qwen2.5 1.5B Instruct)")
+
+question = st.chat_input("Ask a question in plain English about your HR data")
+
+if question:
     answer = ask_qwen(question)
-    print("Answer:", answer)
+    st.markdown(answer)
