@@ -1,0 +1,7 @@
+streamlit>=1.25.0
+torch>=2.1.0
+transformers>=4.40.0
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+pandas>=2.1.0
+python-dotenv>=1.0.0
