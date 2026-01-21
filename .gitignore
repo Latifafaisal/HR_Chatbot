@@ -1,7 +1,6 @@
+models/
 .env
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.db
-*.DS_Store
+*.pt
+*.bin
+*.safetensors

@@ -1,210 +1,180 @@
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+import torch
 import pandas as pd
-import requests
 import streamlit as st
-from dotenv import load_dotenv
-from typing import Optional, Dict, Any
-from sentence_transformers import SentenceTransformer
 import faiss
+import requests
+from dotenv import load_dotenv
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from sentence_transformers import SentenceTransformer
 
-# ------------------ SETUP & ENV ------------------
+# --- SYSTEM CONFIG ---
 load_dotenv()
+
 HF_TOKEN = os.getenv("HF_TOKEN")
-API_URL = "https://router.huggingface.co/v1/chat/completions"
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" 
+API_URL = os.getenv("API_URL", "https://router.huggingface.co/v1/chat/completions")
+CLOUD_MODEL = os.getenv("CLOUD_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+
+MODEL_DIR = "./models/qwen_1_5b"
+EMBED_DIR = "./models/embeddings"
 DATA_PATH = "HR-Employee-Attrition.csv"
 
-# Page Config - Centered layout without sidebar
-st.set_page_config(page_title="HR Intelligence Hub", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Strategic HR Intelligence", layout="centered", initial_sidebar_state="collapsed")
 
-# ------------------ CUSTOM STYLING (THE PURPLE EDIT) ------------------
+# ------------------ STYLING ------------------
 st.markdown("""
 <style>
-    /* Global Background */
-    .stApp { background-color: #FDFBFF; }
-    
-    /* Hide Sidebar */
+    .stApp { background-color: #FFFFFF; }
     [data-testid="stSidebar"] { display: none; }
-    
-    /* Main Header Container */
     .header-container {
-        background: linear-gradient(135deg, #4A148C 0%, #7B1FA2 100%);
-        padding: 3rem 2rem;
-        border-radius: 20px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2.5rem;
-        box-shadow: 0 10px 30px rgba(74, 20, 140, 0.2);
+        background: linear-gradient(135deg, #6A1B9A 0%, #AB47BC 100%);
+        padding: 2.5rem 2rem; border-radius: 20px; color: white; text-align: center; margin-bottom: 2rem;
+        box-shadow: 0 10px 20px rgba(106, 27, 154, 0.1);
     }
-
-    /* KPI Cards */
     .metric-row { display: flex; gap: 15px; margin-bottom: 25px; }
     .metric-card {
-        flex: 1;
-        background: white;
-        padding: 1.5rem;
-        border-radius: 15px;
-        text-align: center;
-        border: 1px solid #E1BEE7;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        transition: transform 0.3s ease;
+        flex: 1; background: #F8F4FD; padding: 1.2rem; border-radius: 15px; text-align: center;
+        border: 1px solid #E1BEE7; transition: 0.3s;
     }
-    .metric-card:hover { transform: translateY(-5px); border-color: #7B1FA2; }
-    .metric-card h4 { color: #6A1B9A; font-size: 0.9rem; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-card h2 { color: #4A148C; margin: 0; font-size: 2rem; }
-
-    /* Chat Styling */
-    .stChatMessage { 
-        background-color: white !important; 
-        border: 1px solid #F3E5F5 !important; 
-        border-radius: 15px !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-    }
-    .stChatInputContainer { padding-bottom: 30px; }
-    
-    /* Purple Buttons */
-    .stButton>button {
-        background-color: #7B1FA2;
-        color: white;
-        border-radius: 25px;
-        padding: 0.5rem 2rem;
-        border: none;
-        font-weight: 600;
-    }
-    .stButton>button:hover { background-color: #4A148C; color: white; }
+    .metric-card h4 { color: #8E24AA; font-size: 0.8rem; margin-bottom: 5px; text-transform: uppercase; }
+    .metric-card h2 { color: #4A148C; margin: 0; font-size: 1.8rem; font-weight: 700; }
+    .stChatMessage { border-radius: 15px !important; border: 1px solid #F3E5F5 !important; padding: 10px; margin-bottom: 10px; }
+    .stRadio>div { background: #F8F4FD; padding: 10px; border-radius: 15px; border: 1px solid #E1BEE7; }
+    .stButton>button { background: #8E24AA; color: white; border-radius: 25px; width: 100%; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------ DATA & ADVANCED ANALYTICS ------------------
-@st.cache_data
-def load_hr_data(path):
-    if not os.path.exists(path): return None
-    df = pd.read_csv(path)
-    return df.drop(columns=[c for c in ['EmployeeCount', 'Over18', 'StandardHours'] if c in df.columns])
-
-@st.cache_data
-def compute_executive_metrics(df: pd.DataFrame) -> Dict[str, Any]:
-    total = len(df)
-    attr_rate = (df['Attrition'] == "Yes").mean() * 100
-    
-    # Advanced Dept Breakdown
-    dept_stats = df.groupby('Department').agg({
-        'Attrition': lambda x: (x == 'Yes').mean() * 100,
-        'MonthlyIncome': 'mean'
-    }).to_dict(orient='index')
-    
-    # High Risk segment logic
-    risk_count = ((df['JobSatisfaction'] <= 2) & (df['OverTime'] == 'Yes')).sum() if 'JobSatisfaction' in df.columns else 0
-
-    return {
-        "total": total,
-        "rate": f"{attr_rate:.1f}%",
-        "risk": risk_count,
-        "avg_age": f"{df['Age'].mean():.1f}",
-        "dept_stats": dept_stats
-    }
-
-# ------------------ RAG VECTOR ENGINE ------------------
+# ------------------ ENGINES & DATA ------------------
 @st.cache_resource
-def build_vector_index(df: pd.DataFrame):
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    # Structured narratives for better retrieval
-    texts = df.apply(lambda r: f"Employee in {r['Department']} as {r['JobRole']}. Income: {r['MonthlyIncome']}. Satisfaction: {r['JobSatisfaction']}. Attrition: {r['Attrition']}", axis=1).tolist()
-    embeddings = model.encode(texts, convert_to_numpy=True)
+def load_engines():
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct", cache_dir=MODEL_DIR)
+    tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        "Qwen/Qwen2.5-1.5B-Instruct", cache_dir=MODEL_DIR,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto"
+    )
+    embed_model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=EMBED_DIR)
+    return tokenizer, model, embed_model
+
+@st.cache_data
+def get_data_and_metrics(path):
+    if not os.path.exists(path): return None, None
+    df = pd.read_csv(path)
+    df = df.drop(columns=[c for c in ['EmployeeCount', 'Over18', 'StandardHours'] if c in df.columns])
+    
+    depts = df['Department'].unique().tolist()
+    dept_stats = df.groupby('Department')['Attrition'].apply(lambda x: f"{(x == 'Yes').mean() * 100:.1f}%").to_dict()
+    
+    metrics = {
+        "total": len(df),
+        "rate": f"{(df['Attrition'] == 'Yes').mean() * 100:.1f}%",
+        "risk": ((df['JobSatisfaction'] <= 2) & (df['OverTime'] == 'Yes')).sum(),
+        "avg_age": f"{df['Age'].mean():.1f}",
+        "dept_list": depts,
+        "dept_info": dept_stats
+    }
+    return df, metrics
+
+@st.cache_resource
+def build_rag_index(_df, _embed_model):
+    texts = _df.apply(lambda r: f"Dept: {r['Department']} | Role: {r['JobRole']} | Attrition: {r['Attrition']} | Income: {r['MonthlyIncome']}", axis=1).tolist()
+    embeddings = _embed_model.encode(texts, convert_to_numpy=True)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
-    return index, texts, model
+    return index, texts
 
-# ------------------ INTELLIGENT MEMORY RESPONSE ------------------
-def generate_response(question: str, context: str, metrics: dict, history: list) -> str:
-    # Format the last 3 messages for history
-    history_context = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history[-3:]])
+# ------------------ SMART INFERENCE LOGIC ------------------
+def generate_smart_response(question, context, metrics, mode, tokenizer=None, model=None):
+    # If the user asks about employee names or anything not in the dataset
+    if "name" in question.lower() and "employee" in question.lower():
+        return "I don’t know the names of employees as they are not in the dataset."
     
-    system_prompt = f"""
-    You are the Strategic HR Director Assistant. 
-    
-    [SNAPSHOT]
-    Total Headcount: {metrics['total']} | Attrition: {metrics['rate']}
-    High Burnout Risk: {metrics['risk']} | Average Age: {metrics['avg_age']}
-    
-    [HISTORY]
-    {history_context}
+    dept_str = ", ".join(metrics['dept_list'])
+    system_instruction = f"""
+You are the Lead HR Intelligence Agent. 
+[DATA SNAPSHOT]
+- Total Headcount: {metrics['total']}
+- Overall Attrition: {metrics['rate']}
+- Total High-Risk Employees: {metrics['risk']}
+- Departments in Database: {dept_str} ({len(metrics['dept_list'])} departments total)
+- Departmental Attrition Breakdown: {metrics['dept_info']}
 
-    [DATABASE CONTEXT]
-    {context}
+[RELEVANT DATABASE RECORDS]
+{context}
 
-    RULES:
-    1. Be executive and data-driven.
-    2. If the user says 'Hi', greet them and mention the {metrics['rate']} attrition rate.
-    3. Use the HISTORY to understand follow-up questions.
-    4. Provide one 'Strategic Recommendation' in every answer.
-    """
+RULES:
+1. Grounding: If asked "how many departments", refer to the [DATA SNAPSHOT].
+2. Strategy: Always provide one 'Strategic Recommendation'.
+3. Tone: Executive, data-driven, concise.
+"""
 
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {
-        "model": MODEL_NAME,
-        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
-        "temperature": 0.2
-    }
-
-    try:
+    if "Cloud" in mode:
+        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        payload = {
+            "model": CLOUD_MODEL,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": question}
+            ],
+            "temperature": 0.1
+        }
         r = requests.post(API_URL, headers=headers, json=payload, timeout=40)
         return r.json()["choices"][0]["message"]["content"]
-    except:
-        return "❌ Connection error with Intelligence Engine."
+    else:
+        full_prompt = f"<|im_start|>system\n{system_instruction}<|im_end|>\n<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n"
+        inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            outputs = model.generate(**inputs, max_new_tokens=300, temperature=0.1, pad_token_id=tokenizer.eos_token_id)
+        answer = tokenizer.decode(outputs[0], skip_special_tokens=False).split("<|im_start|>assistant")[-1]
+        return answer.replace("<|im_end|>", "").strip()
 
 # ------------------ MAIN INTERFACE ------------------
 def main():
-    # Header
-    st.markdown('<div class="header-container"><h1>🚀 Strategic HR Intelligence</h1><p>Workforce Decision Support System</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header-container"><h1>🚀 Strategic HR Intelligence</h1><p>Executive Decision Hub • Data-Grounded</p></div>', unsafe_allow_html=True)
     
-    df = load_hr_data(DATA_PATH)
+    mode = st.radio("Intelligence Engine:", ["Cloud (7B API)", "Local (1.5B Private)"], horizontal=True)
+    
+    df, metrics = get_data_and_metrics(DATA_PATH)
     if df is not None:
-        metrics = compute_executive_metrics(df)
-        index, texts, model = build_vector_index(df)
+        tokenizer, model, embed_model = load_engines()
+        idx, texts = build_rag_index(df, embed_model)
 
-        # Purple Metric Bar
-        st.markdown(f"""
-        <div class="metric-row">
-            <div class="metric-card"><h4>Headcount</h4><h2>{metrics['total']}</h2></div>
-            <div class="metric-card"><h4>Attrition</h4><h2>{metrics['rate']}</h2></div>
-            <div class="metric-card"><h4>High Risk</h4><h2>{metrics['risk']}</h2></div>
-            <div class="metric-card"><h4>Avg Age</h4><h2>{metrics['avg_age']}</h2></div>
-        </div>
-        """, unsafe_allow_html=True)
+        # KPI Row
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f'<div class="metric-card"><h4>Headcount</h4><h2>{metrics["total"]}</h2></div>', unsafe_allow_html=True)
+        c2.markdown(f'<div class="metric-card"><h4>Attrition</h4><h2>{metrics["rate"]}</h2></div>', unsafe_allow_html=True)
+        c3.markdown(f'<div class="metric-card"><h4>High Risk</h4><h2>{metrics["risk"]}</h2></div>', unsafe_allow_html=True)
+        c4.markdown(f'<div class="metric-card"><h4>Avg Age</h4><h2>{metrics["avg_age"]}</h2></div>', unsafe_allow_html=True)
 
-        # Conversation State
         if "messages" not in st.session_state: st.session_state.messages = []
-        
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.markdown(m["content"])
 
-        if user_input := st.chat_input("Ask about attrition, risks, or specific departments..."):
+        if user_input := st.chat_input("Ask about department counts, attrition, or strategy..."):
             st.session_state.messages.append({"role": "user", "content": user_input})
             with st.chat_message("user"): st.markdown(user_input)
 
             with st.chat_message("assistant"):
-                # Intelligent Retrieval
-                is_greet = any(x in user_input.lower() for x in ["hi", "hello", "hey"])
-                if is_greet:
-                    context = "Greeting sequence initiated."
-                else:
-                    with st.spinner("Analyzing workforce data..."):
-                        _, I = index.search(model.encode([user_input]), 5)
-                        context = "\n".join([texts[i] for i in I[0]])
-                
-                # AI Logic with History
-                response = generate_response(user_input, context, metrics, st.session_state.messages[:-1])
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                # Search depth of 5 for better accuracy
+                query_emb = embed_model.encode([user_input], convert_to_numpy=True)
+                _, I = idx.search(query_emb, 5)
+                context = "\n".join([texts[i] for i in I[0]])
 
-        # Reset Option
-        if st.button("Clear Chat History"):
+                with st.spinner("Processing..."):
+                    try:
+                        response = generate_smart_response(user_input, context, metrics, mode, tokenizer, model)
+                        st.markdown(response)
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    except Exception as e:
+                        st.error("Engine Connection Error. Please verify your API URL and Token.")
+
+        if st.button("🗑️ Clear Executive Session"):
             st.session_state.messages = []
             st.rerun()
-            
     else:
-        st.error(f"Critical Error: {DATA_PATH} not found.")
+        st.error(f"Missing {DATA_PATH}. Please ensure the CSV is in the root folder.")
 
 if __name__ == "__main__":
     main()
