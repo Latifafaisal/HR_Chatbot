@@ -3,250 +3,208 @@ import pandas as pd
 import requests
 import streamlit as st
 from dotenv import load_dotenv
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Dict, Any
+from sentence_transformers import SentenceTransformer
+import faiss
 
-# Load environment variables
+# ------------------ SETUP & ENV ------------------
 load_dotenv()
-
-# --- CONFIGURATION ---
 HF_TOKEN = os.getenv("HF_TOKEN")
 API_URL = "https://router.huggingface.co/v1/chat/completions"
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" 
 DATA_PATH = "HR-Employee-Attrition.csv"
 
-# --- PAGE SETUP ---
-st.set_page_config(
-    page_title="Strategic HR Intelligence Hub",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Page Config - Centered layout without sidebar
+st.set_page_config(page_title="HR Intelligence Hub", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ENHANCED UI STYLING ---
+# ------------------ CUSTOM STYLING (THE PURPLE EDIT) ------------------
 st.markdown("""
 <style>
-    :root {
-        --primary-color: #4A148C;
-        --secondary-color: #7B1FA2;
-        --bg-color: #F4F7F9;
-        --sidebar-bg: #1E1E2F;
-    }
-    .stApp { background-color: var(--bg-color); }
-    [data-testid="stSidebar"] { background-color: var(--sidebar-bg); color: #FFFFFF; }
-    [data-testid="stSidebar"] * { color: #E0E0E0 !important; }
+    /* Global Background */
+    .stApp { background-color: #FDFBFF; }
     
-    .metric-card {
-        background-color: #FFFFFF;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border-left: 5px solid var(--primary-color);
-    }
+    /* Hide Sidebar */
+    [data-testid="stSidebar"] { display: none; }
     
-    .stChatMessage {
-        border-radius: 12px;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-    }
-    
-    .stButton>button {
-        width: 100%;
-        border-radius: 8px;
-        background-color: var(--primary-color);
+    /* Main Header Container */
+    .header-container {
+        background: linear-gradient(135deg, #4A148C 0%, #7B1FA2 100%);
+        padding: 3rem 2rem;
+        border-radius: 20px;
         color: white;
-        transition: all 0.3s ease;
+        text-align: center;
+        margin-bottom: 2.5rem;
+        box-shadow: 0 10px 30px rgba(74, 20, 140, 0.2);
     }
-    .stButton>button:hover {
-        background-color: var(--secondary-color);
-        transform: translateY(-1px);
+
+    /* KPI Cards */
+    .metric-row { display: flex; gap: 15px; margin-bottom: 25px; }
+    .metric-card {
+        flex: 1;
+        background: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        text-align: center;
+        border: 1px solid #E1BEE7;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        transition: transform 0.3s ease;
     }
+    .metric-card:hover { transform: translateY(-5px); border-color: #7B1FA2; }
+    .metric-card h4 { color: #6A1B9A; font-size: 0.9rem; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-card h2 { color: #4A148C; margin: 0; font-size: 2rem; }
+
+    /* Chat Styling */
+    .stChatMessage { 
+        background-color: white !important; 
+        border: 1px solid #F3E5F5 !important; 
+        border-radius: 15px !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    }
+    .stChatInputContainer { padding-bottom: 30px; }
+    
+    /* Purple Buttons */
+    .stButton>button {
+        background-color: #7B1FA2;
+        color: white;
+        border-radius: 25px;
+        padding: 0.5rem 2rem;
+        border: none;
+        font-weight: 600;
+    }
+    .stButton>button:hover { background-color: #4A148C; color: white; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- DATA ENGINE ---
-@st.cache_data(show_spinner="Loading organizational data...")
-def load_and_preprocess_data(path: str) -> Optional[pd.DataFrame]:
-    if not os.path.exists(path):
-        return None
-    try:
-        df = pd.read_csv(path)
-        # Basic cleaning: remove constants or irrelevant columns if they exist
-        cols_to_drop = ['EmployeeCount', 'Over18', 'StandardHours']
-        df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
-        return df
-    except Exception as e:
-        st.error(f"Data Loading Error: {e}")
-        return None
+# ------------------ DATA & ADVANCED ANALYTICS ------------------
+@st.cache_data
+def load_hr_data(path):
+    if not os.path.exists(path): return None
+    df = pd.read_csv(path)
+    return df.drop(columns=[c for c in ['EmployeeCount', 'Over18', 'StandardHours'] if c in df.columns])
 
 @st.cache_data
-def compute_advanced_metrics(df: pd.DataFrame) -> Dict[str, Any]:
-    """Pre-calculates a rich set of metrics to provide better context to the LLM."""
+def compute_executive_metrics(df: pd.DataFrame) -> Dict[str, Any]:
     total = len(df)
-    attrition_mask = df['Attrition'] == "Yes"
-    overall_attrition_rate = attrition_mask.mean() * 100
+    attr_rate = (df['Attrition'] == "Yes").mean() * 100
     
-    # Departmental breakdown
+    # Advanced Dept Breakdown
     dept_stats = df.groupby('Department').agg({
         'Attrition': lambda x: (x == 'Yes').mean() * 100,
-        'MonthlyIncome': 'mean',
-        'YearsAtCompany': 'mean'
-    }).rename(columns={'Attrition': 'AttritionRate', 'MonthlyIncome': 'AvgIncome', 'YearsAtCompany': 'AvgTenure'})
+        'MonthlyIncome': 'mean'
+    }).to_dict(orient='index')
     
-    # High-risk segments (e.g., low job satisfaction + high overtime)
-    if 'JobSatisfaction' in df.columns and 'OverTime' in df.columns:
-        high_risk_mask = (df['JobSatisfaction'] <= 2) & (df['OverTime'] == 'Yes')
-        high_risk_count = high_risk_mask.sum()
-    else:
-        high_risk_count = "N/A"
+    # High Risk segment logic
+    risk_count = ((df['JobSatisfaction'] <= 2) & (df['OverTime'] == 'Yes')).sum() if 'JobSatisfaction' in df.columns else 0
 
     return {
-        "total_employees": total,
-        "overall_attrition_rate": f"{overall_attrition_rate:.2f}%",
-        "dept_stats": dept_stats.to_dict(orient='index'),
-        "high_risk_count": high_risk_count,
-        "avg_age": df['Age'].mean() if 'Age' in df.columns else "N/A",
-        "top_roles": df['JobRole'].value_counts().head(3).to_dict()
+        "total": total,
+        "rate": f"{attr_rate:.1f}%",
+        "risk": risk_count,
+        "avg_age": f"{df['Age'].mean():.1f}",
+        "dept_stats": dept_stats
     }
 
-# --- AI REASONING CORE ---
-def generate_strategic_response(question: str, df: pd.DataFrame, metrics: Dict[str, Any]) -> str:
-    if not HF_TOKEN:
-        return "⚠️ System Configuration Error: API Token missing."
+# ------------------ RAG VECTOR ENGINE ------------------
+@st.cache_resource
+def build_vector_index(df: pd.DataFrame):
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    # Structured narratives for better retrieval
+    texts = df.apply(lambda r: f"Employee in {r['Department']} as {r['JobRole']}. Income: {r['MonthlyIncome']}. Satisfaction: {r['JobSatisfaction']}. Attrition: {r['Attrition']}", axis=1).tolist()
+    embeddings = model.encode(texts, convert_to_numpy=True)
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(embeddings)
+    return index, texts, model
 
-    # Construct a highly structured context
-    context_summary = f"""
-    ORGANIZATIONAL SNAPSHOT:
-    - Total Workforce: {metrics['total_employees']}
-    - Global Attrition Rate: {metrics['overall_attrition_rate']}
-    - High-Risk Employees (Low Satisfaction + Overtime): {metrics['high_risk_count']}
-    - Top 3 Roles: {', '.join(metrics['top_roles'].keys())}
+# ------------------ INTELLIGENT MEMORY RESPONSE ------------------
+def generate_response(question: str, context: str, metrics: dict, history: list) -> str:
+    # Format the last 3 messages for history
+    history_context = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history[-3:]])
     
-    DEPARTMENTAL PERFORMANCE:
-    {pd.DataFrame(metrics['dept_stats']).T.to_string()}
+    system_prompt = f"""
+    You are the Strategic HR Director Assistant. 
     
-    DATA SCHEMA:
-    {df.dtypes.to_string()}
+    [SNAPSHOT]
+    Total Headcount: {metrics['total']} | Attrition: {metrics['rate']}
+    High Burnout Risk: {metrics['risk']} | Average Age: {metrics['avg_age']}
+    
+    [HISTORY]
+    {history_context}
+
+    [DATABASE CONTEXT]
+    {context}
+
+    RULES:
+    1. Be executive and data-driven.
+    2. If the user says 'Hi', greet them and mention the {metrics['rate']} attrition rate.
+    3. Use the HISTORY to understand follow-up questions.
+    4. Provide one 'Strategic Recommendation' in every answer.
     """
 
-    # Memory Management: Keep last 5 interactions for better continuity
-    history = ""
-    if "messages" in st.session_state:
-        history = "\n".join([f"{m['role'].upper()}: {m['content'][:200]}..." for m in st.session_state.messages[-5:]])
-
-    system_prompt = f"""
-You are a Strategic HR Intelligence Assistant.
-
-Your ONLY goal is to answer the user's specific question using the provided data.
-You must stay on-topic. Do NOT introduce unrelated metrics, themes, or KPIs.
-
-CONTEXT (use only what is relevant):
-{context_summary}
-
-RECENT HISTORY (for continuity only, do NOT change topic):
-{history}
-
-USER QUERY:
-"{question}"
-
-STRICT RULES (VERY IMPORTANT):
-- Every sentence must directly relate to the USER QUERY.
-- If a section cannot be answered using the data relevant to the query, explicitly say:
-  "The available data does not provide enough information on this aspect."
-- Do NOT default to attrition, income, tenure, or satisfaction unless the question explicitly asks about them.
-- Do NOT generalize beyond the topic of the question.
-- Do NOT add extra insights just to sound strategic.
-
-RESPONSE STRUCTURE (MANDATORY):
-
-[Direct Answer]
-- One clear, factual answer to the question.
-- Use exact numbers when possible.
-- No introductions or filler text.
-
-### 🔍 Deep Dive Analysis
-- Analyze ONLY the variables directly related to the question.
-- Explain patterns or comparisons strictly within that scope.
-- If analysis is limited, clearly state the limitation.
-
-### 💡 Strategic Recommendation
-- Provide ONE actionable recommendation.
-- The recommendation must be logically derived from the analysis above.
-- It must match the topic of the question exactly.
-  Examples:
-  - Departments → org structure, workload balance, staffing
-  - Income → compensation bands, pay equity
-  - Age/Tenure → succession planning, mentoring
-- If no recommendation can be justified, say so clearly.
-"""
-
-
-    headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     payload = {
-        "model": "Qwen/Qwen2.5-7B-Instruct", # Using a larger model for better reasoning
-        "messages": [
-            {"role": "system", "content": "You are a Strategic HR Intelligence Assistant."},
-            {"role": "user", "content": system_prompt}
-        ],
-        "temperature": 0.2, # Lower temperature for more factual consistency
-        "max_tokens": 1000
+        "model": MODEL_NAME,
+        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
+        "temperature": 0.2
     }
 
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=45)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"❌ Intelligence Engine Error: {str(e)}"
+        r = requests.post(API_URL, headers=headers, json=payload, timeout=40)
+        return r.json()["choices"][0]["message"]["content"]
+    except:
+        return "❌ Connection error with Intelligence Engine."
 
-# --- MAIN APPLICATION ---
+# ------------------ MAIN INTERFACE ------------------
 def main():
-    st.title("🚀 Strategic HR Intelligence Hub")
-    st.caption("Transforming raw workforce data into executive-level strategy.")
-
-    df = load_and_preprocess_data(DATA_PATH)
-
+    # Header
+    st.markdown('<div class="header-container"><h1>🚀 Strategic HR Intelligence</h1><p>Workforce Decision Support System</p></div>', unsafe_allow_html=True)
+    
+    df = load_hr_data(DATA_PATH)
     if df is not None:
-        metrics = compute_advanced_metrics(df)
+        metrics = compute_executive_metrics(df)
+        index, texts, model = build_vector_index(df)
+
+        # Purple Metric Bar
+        st.markdown(f"""
+        <div class="metric-row">
+            <div class="metric-card"><h4>Headcount</h4><h2>{metrics['total']}</h2></div>
+            <div class="metric-card"><h4>Attrition</h4><h2>{metrics['rate']}</h2></div>
+            <div class="metric-card"><h4>High Risk</h4><h2>{metrics['risk']}</h2></div>
+            <div class="metric-card"><h4>Avg Age</h4><h2>{metrics['avg_age']}</h2></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Conversation State
+        if "messages" not in st.session_state: st.session_state.messages = []
         
-        # Sidebar Dashboard
-        with st.sidebar:
-            st.image("https://img.icons8.com/fluency/96/business-conference.png", width=80)
-            st.header("Workforce Overview")
-            
-            col1, col2 = st.columns(2)
-            col1.metric("Headcount", metrics['total_employees'])
-            col2.metric("Attrition", metrics['overall_attrition_rate'], delta_color="inverse")
-            
-            st.divider()
-            st.subheader("Data Explorer")
-            if st.checkbox("Preview Dataset"):
-                st.dataframe(df.head(10), use_container_width=True)
-            
-            if st.button("Clear Conversation"):
-                st.session_state.messages = []
-                st.rerun()
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]): st.markdown(m["content"])
 
-        # Chat Interface
-        if "messages" not in st.session_state:
-            st.session_state.messages = [{"role": "assistant", "content": "Welcome, Leader. I've analyzed the HR dataset. How can I assist with your workforce strategy today?"}]
-
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-        if user_input := st.chat_input("Analyze attrition trends in Sales..."):
+        if user_input := st.chat_input("Ask about attrition, risks, or specific departments..."):
             st.session_state.messages.append({"role": "user", "content": user_input})
-            with st.chat_message("user"):
-                st.markdown(user_input)
+            with st.chat_message("user"): st.markdown(user_input)
 
             with st.chat_message("assistant"):
-                with st.spinner("Consulting the intelligence engine..."):
-                    response = generate_strategic_response(user_input, df, metrics)
-                    st.markdown(response)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
+                # Intelligent Retrieval
+                is_greet = any(x in user_input.lower() for x in ["hi", "hello", "hey"])
+                if is_greet:
+                    context = "Greeting sequence initiated."
+                else:
+                    with st.spinner("Analyzing workforce data..."):
+                        _, I = index.search(model.encode([user_input]), 5)
+                        context = "\n".join([texts[i] for i in I[0]])
+                
+                # AI Logic with History
+                response = generate_response(user_input, context, metrics, st.session_state.messages[:-1])
+                st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+
+        # Reset Option
+        if st.button("Clear Chat History"):
+            st.session_state.messages = []
+            st.rerun()
+            
     else:
-        st.error(f"Critical Error: '{DATA_PATH}' not found. Please ensure the dataset is in the root directory.")
-        st.info("Expected columns: Attrition, Department, MonthlyIncome, Age, etc.")
+        st.error(f"Critical Error: {DATA_PATH} not found.")
 
 if __name__ == "__main__":
     main()
