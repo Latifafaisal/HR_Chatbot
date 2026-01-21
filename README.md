@@ -1,130 +1,83 @@
-# Strategic HR Intelligence Hub
+#  Strategic HR Intelligence Chatbot
 
-## Turning Workforce Data Into Clear Executive Decisions
+**Strategic HR Intelligence** is an AI-driven executive assistant for HR leaders. It combines Qwen LLM, RAG (Retrieval-Augmented Generation), and employee data analytics to provide real-time insights, departmental attrition metrics, and strategic recommendations in plain English.
 
-The **Strategic HR Intelligence Hub** is an intelligent assistant designed to help **HR leaders, managers, and executives** understand their workforce data without technical skills.
+# 🔹 Features
 
-Instead of spreadsheets, charts, or dashboards, you simply **ask questions in plain English** and receive:
-- Clear answers
-- Data-backed explanations
-- Practical strategic recommendations
+**Natural Language Queries:** Ask questions like:  
+"Which departments are at risk?" or "What is the attrition rate this quarter?"
 
-Think of it as having a **24/7 HR data analyst** who understands your employee data and speaks your language.
+**RAG-Powered Knowledge:** Answers are grounded in actual employee records.
 
----
+**Cloud & Local Modes:**  
+- **Cloud (7B API):** High-reasoning via Hugging Face.  
+- **Local (1.5B):** Private processing on your machine.
 
-## What Problem Does This Solve?
+**KPI Dashboard:** Real-time headcount, attrition, and risk metrics.
 
-Most HR data tools:
-- Are difficult to use
-- Require technical knowledge
-- Show numbers without clear meaning
+# 🛠️ Tech Stack
 
-This hub removes those barriers by:
-- Letting you ask questions naturally
-- Explaining results clearly
-- Helping you decide what action to take next
+- **Python 3.10+**  
+- **Streamlit:** UI Framework  
+- **FAISS:** Vector Search Engine  
+- **PyTorch & Transformers:** LLM Logic  
+- **Pandas:** Data Processing  
 
----
+# ⚡ Installation & Setup
 
-## What Can You Ask?
-
-You can ask questions like:
-
-- **“What is our current workforce health?”**
-- **“Which departments are most at risk of attrition?”**
-- **“How does overtime affect employee satisfaction?”**
-- **“What should be our top HR priority next quarter?”**
-
-The system responds with:
-- A short professional explanation
-- One clear **Strategic Recommendation**
-
----
-
-## How the System Thinks (Simple Explanation)
-
-### The Pulse Check
-When the app starts, it automatically reviews key indicators such as:
-- Total number of employees
-- Attrition rate
-- High-risk employees
-- Average employee age
-- Department-level attrition
-
-This gives leadership an instant overview of workforce health.
-
----
-
-### The Smart Search
-When you ask a question, the system:
-- Searches thousands of employee records in milliseconds
-- Finds only the most relevant information
-- Ignores unrelated data
-
-This ensures answers are **accurate and focused**.
-
----
-
-### The Translation Layer
-Raw numbers are converted into:
-- Clear business language
-- Executive-ready summaries
-- Actionable insights
-
-You don’t see technical outputs, only **what matters**.
-
----
-
-## Built-In Safety and Trust
-
-### No Guessing or Hallucination
-If you ask something **not available in the data** (for example, employee names), the system will clearly respond:
-
-**“I don’t know.”**
-
-This guarantees:
-- No misleading answers
-- No invented data
-- Full transparency
-
----
-
-## Dual Intelligence Engines
-
-You can choose how the system runs:
-
-### Cloud Engine (7B Model)
-- Uses a powerful AI model through secure cloud access
-- Best for deeper reasoning and complex questions
-
-### Local Engine (1.5B Model)
-- Runs entirely on your computer
-- Faster responses
-- Maximum data privacy
-- Works offline
-
-You can switch between engines anytime.
-
----
-
-## Easy Setup (No Technical Expertise Required)
-
-Getting started takes only a few steps:
-
-### Step 1: Install Python
-Make sure Python is installed on your computer.
-
-### Step 2: Add Your API Key
-Insert your Hugging Face security key into a file called `.env`.
-
-### Step 3: Add Your Data
-Place the file:
-**HR-Employee-Attrition.csv**
-into the project folder.
-
-### Step 4: Launch the App
-Run this command:
-
+## 1. Clone the Repository
 ```bash
-streamlit run hr_chatbot.py
+git clone https://github.com/Latifafaisal/HR_Chatbot.git
+cd HR_Chatbot
+```
+## 2. Create a Python Environment & Install Dependencies
+```bash
+python -m venv venv
+
+# macOS/Linux
+source venv/bin/activate
+
+# Windows
+venv\Scripts\activate
+
+pip install -r requirements.txt
+```
+## 3. Configure Environment Variables
+Create a .env file in the root folder with the following content:
+```env
+HF_TOKEN=your_huggingface_token_here
+API_URL=https://router.huggingface.co/v1/chat/completions
+CLOUD_MODEL=Qwen/Qwen2.5-7B-Instruct
+LOCAL_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+```
+## 4. Place Your HR Dataset
+Ensure your HR-Employee-Attrition.csv file is in the root directory.
+
+## 5. Run the App
+```bash
+streamlit run app.py
+```
+# 🧩 Usage
+**Intelligence Engine**: Select Cloud or Local via the UI toggle.
+
+**Querying**: Type questions like:
+
+- "Which department has the highest attrition?"
+
+- "How many departments are there?"
+
+**Output**: The AI will provide a data-driven answer followed by a strategic recommendation.
+**Chat Screenshot:**  
+![Chat Screenshot](img/chat.png)
+
+**Dashboard Screenshot:**  
+![Dashboard Screenshot](img/dashboard.png)
+# 🗂️ Project Structure
+```text
+HR_Chatbot/
+├─ app.py                # Main Application Logic
+├─ HR-Employee-Attrition.csv
+├─ models/               # Local LLM Storage
+├─ requirements.txt      # Dependencies
+└─ .env                  # API Credentials
+```

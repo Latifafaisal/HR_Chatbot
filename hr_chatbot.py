@@ -23,25 +23,125 @@ DATA_PATH = "HR-Employee-Attrition.csv"
 st.set_page_config(page_title="Strategic HR Intelligence", layout="centered", initial_sidebar_state="collapsed")
 
 # ------------------ STYLING ------------------
+# STC Primary Purple: #4F008C
 st.markdown("""
 <style>
-    .stApp { background-color: #FFFFFF; }
-    [data-testid="stSidebar"] { display: none; }
+    /* Main App Background */
+    .stApp { 
+        background-color: #FFFFFF; 
+    }
+    
+    /* Hide Sidebar */
+    [data-testid="stSidebar"] { 
+        display: none; 
+    }
+
+    /* Header Container - STC Deep Purple */
     .header-container {
-        background: linear-gradient(135deg, #6A1B9A 0%, #AB47BC 100%);
-        padding: 2.5rem 2rem; border-radius: 20px; color: white; text-align: center; margin-bottom: 2rem;
-        box-shadow: 0 10px 20px rgba(106, 27, 154, 0.1);
+        background-color: #4F008C;
+        padding: 2.5rem 2rem; 
+        border-radius: 0px 0px 30px 30px; /* Modern curved bottom */
+        color: white; 
+        text-align: center; 
+        margin-bottom: 1.5rem; /* Reduced margin under header as requested */
+        box-shadow: 0 10px 30px rgba(79, 0, 140, 0.15);
+        margin-top: -60px; /* Pull up to top of page */
+        margin-left: -20%;
+        margin-right: -20%;
     }
-    .metric-row { display: flex; gap: 15px; margin-bottom: 25px; }
+    
+    .header-container h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    .header-container p {
+        font-size: 1.1rem;
+        opacity: 0.85;
+        font-weight: 300;
+    }
+
+    /* Metric Cards - STC Accents */
+    .metric-row { 
+        display: flex; 
+        gap: 20px; 
+        margin-bottom: 30px; 
+    }
     .metric-card {
-        flex: 1; background: #F8F4FD; padding: 1.2rem; border-radius: 15px; text-align: center;
-        border: 1px solid #E1BEE7; transition: 0.3s;
+        flex: 1; 
+        background: #F9F5FF; 
+        padding: 1.5rem; 
+        border-radius: 20px; 
+        text-align: center;
+        border: 1px solid #E9D5FF; 
+        transition: all 0.3s ease;
     }
-    .metric-card h4 { color: #8E24AA; font-size: 0.8rem; margin-bottom: 5px; text-transform: uppercase; }
-    .metric-card h2 { color: #4A148C; margin: 0; font-size: 1.8rem; font-weight: 700; }
-    .stChatMessage { border-radius: 15px !important; border: 1px solid #F3E5F5 !important; padding: 10px; margin-bottom: 10px; }
-    .stRadio>div { background: #F8F4FD; padding: 10px; border-radius: 15px; border: 1px solid #E1BEE7; }
-    .stButton>button { background: #8E24AA; color: white; border-radius: 25px; width: 100%; font-weight: 600; }
+    .metric-card:hover {
+        border-color: #4F008C;
+        background: #F3E8FF;
+        transform: translateY(-3px);
+    }
+    .metric-card h4 { 
+        color: #4F008C; 
+        font-size: 0.85rem; 
+        margin-bottom: 8px; 
+        text-transform: uppercase; 
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    .metric-card h2 { 
+        color: #1A0033; 
+        margin: 0; 
+        font-size: 2rem; 
+        font-weight: 800; 
+    }
+
+    /* Chat Messages */
+    .stChatMessage { 
+        border-radius: 20px !important; 
+        border: 1px solid #F3E8FF !important; 
+        padding: 15px !important; 
+        margin-bottom: 15px !important; 
+    }
+    
+    /* User Message - Light STC Purple Tint */
+    [data-testid="stChatMessageUser"] {
+        background-color: #F3E8FF !important;
+    }
+
+    /* Radio Buttons */
+    .stRadio>div { 
+        background: #F9F5FF; 
+        padding: 15px; 
+        border-radius: 20px; 
+        border: 1px solid #E9D5FF; 
+    }
+    .stRadio label {
+        color: #4F008C !important;
+        font-weight: 600 !important;
+    }
+
+    /* Buttons - STC Signature Purple */
+    .stButton>button { 
+        background-color: #4F008C; 
+        color: white; 
+        border-radius: 50px; 
+        width: 100%; 
+        font-weight: 600;
+        border: none;
+        padding: 0.75rem;
+        transition: all 0.3s ease;
+        margin-top: 10px;
+    }
+    .stButton>button:hover {
+        background-color: #3A0066;
+        box-shadow: 0 8px 20px rgba(79, 0, 140, 0.25);
+    }
+    
+    /* Chat Input Styling */
+    .stChatInputContainer {
+        padding-bottom: 30px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -132,7 +232,7 @@ RULES:
 
 # ------------------ MAIN INTERFACE ------------------
 def main():
-    st.markdown('<div class="header-container"><h1>🚀 Strategic HR Intelligence</h1><p>Executive Decision Hub • Data-Grounded</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header-container"><h1> Strategic HR Intelligence</h1><p>Executive Decision Hub • Data-Grounded</p></div>', unsafe_allow_html=True)
     
     mode = st.radio("Intelligence Engine:", ["Cloud (7B API)", "Local (1.5B Private)"], horizontal=True)
     
@@ -147,6 +247,9 @@ def main():
         c2.markdown(f'<div class="metric-card"><h4>Attrition</h4><h2>{metrics["rate"]}</h2></div>', unsafe_allow_html=True)
         c3.markdown(f'<div class="metric-card"><h4>High Risk</h4><h2>{metrics["risk"]}</h2></div>', unsafe_allow_html=True)
         c4.markdown(f'<div class="metric-card"><h4>Avg Age</h4><h2>{metrics["avg_age"]}</h2></div>', unsafe_allow_html=True)
+
+        # Spacing between KPIs and the rest of the content
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
         if "messages" not in st.session_state: st.session_state.messages = []
         for m in st.session_state.messages:
@@ -170,6 +273,8 @@ def main():
                     except Exception as e:
                         st.error("Engine Connection Error. Please verify your API URL and Token.")
 
+        # Space before the clear button
+        st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
         if st.button("🗑️ Clear Executive Session"):
             st.session_state.messages = []
             st.rerun()
